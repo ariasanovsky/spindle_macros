@@ -2,16 +2,6 @@ use syn::{parse::{Parse, ParseStream}, ItemFn, Result};
 
 use crate::{RangeAttributes, RangeFn};
 
-impl Parse for RangeAttributes {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.is_empty() {
-            Ok(Self)
-        } else {
-            Err(input.error("attributes are not yet supported"))
-        }
-    }
-}
-
 static NO_ATTRIBUTES: &str = "attributes are not yet supported";
 static NO_GENERICS: &str = "generic functions are not yet supported";
 static NOT_A_METHOD: &str = "range functions are methods";
@@ -19,7 +9,17 @@ static NO_WHERE_CLAUSE: &str = "where clauses are not supported";
 static EXACTLY_ONE_INPUT: &str = "range functions have exactly one integer input";
 static ONLY_INTEGERS: &str = "range functions take integer types (isize, usize, i32, u32, etc.)";
 static NO_RETURN: &str = "range functions have a return type";
-static ONLY_PRIMITIVE_RETURNS: &str = "range functions currently return primitive types (i32, usize, f32, etc.)";
+static ONLY_PRIMITIVE_RETURNS: &str = "range functions currently return primitive number types (i32, usize, f32, etc.)";
+
+impl Parse for RangeAttributes {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if input.is_empty() {
+            Ok(Self)
+        } else {
+            Err(input.error(NO_ATTRIBUTES))
+        }
+    }
+}
 
 impl Parse for RangeFn {
     fn parse(input: ParseStream) -> Result<Self> {
