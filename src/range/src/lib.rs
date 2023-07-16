@@ -20,17 +20,18 @@ pub unsafe extern "ptx-kernel" fn kernel(output: *mut i32, size: i32)
     let block_dim: i32 = _block_dim_x();
     let grid_dim: i32 = _grid_dim_x();
     
-    let n_threads = block_dim * grid_dim;
-    let thread_index =  thread_id + block_id * block_dim;
-
-    let tasks = size / n_threads;
-    let start = thread_index * tasks;
-    let end = start + tasks;
-
-    let mut i = start;
-    while i < end && i < size {
+    let n_threads: i32 = block_dim * grid_dim;
+    let thread_index: i32 =  thread_id + block_id * block_dim;
+    
+    let mut i: i32 = thread_index;
+    while i < size {
         let value = device::device(i);
         *output.offset(i as isize) = value;
-        i += 1;
+        i = i.wrapping_add(n_threads);
     }
+    // while i < end && i < size {
+    //     let value = device::device(i);
+    //     *output.offset(i as isize) = value;
+    //     i = i.wrapping_add(1);
+    // }
 }

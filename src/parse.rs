@@ -10,6 +10,7 @@ static EXACTLY_ONE_INPUT: &str = "range functions have exactly one integer input
 static ONLY_INTEGERS: &str = "range functions take integer types (isize, usize, i32, u32, etc.)";
 static NO_RETURN: &str = "range functions have a return type";
 static ONLY_PRIMITIVE_RETURNS: &str = "range functions currently return primitive number types (i32, usize, f32, etc.)";
+static ONLY_I32: &str = "range functions currently only admit i32";
 
 impl Parse for RangeAttributes {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -68,6 +69,10 @@ impl Parse for RangeFn {
         if !["isize", "usize", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64"].contains(&int_type.as_str()) {
             return Err(input.error(ONLY_INTEGERS));
         }
+        if int_type.ne("i32") {
+            return Err(input.error(ONLY_I32));
+        }
+
         let output = match &range_fn.sig.output {
             syn::ReturnType::Default => return Err(input.error(NO_RETURN)),
             syn::ReturnType::Type(_, output) => *output.clone(),
