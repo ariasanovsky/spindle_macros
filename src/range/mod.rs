@@ -1,3 +1,31 @@
+pub(super) static CARGO_TOML: &str = r#"
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "kernel"
+crate-type = ["cdylib"]
+test = false
+bench = false
+"#;
+
+pub(super) static RUST_TOOLCHAIN_TOML: &str = r#"
+[toolchain]
+channel = "nightly"
+"#;
+
+pub(super) static CONFIG_TOML: &str = r#"
+[build]
+target = "nvptx64-nvidia-cuda"
+rustflags = ["--emit", "asm"]
+
+[term]
+color = "always" # "auto"
+"#;
+
+pub(super) static LIB_RS: &str = r#"
 #![no_std]
 #![feature(abi_ptx)]
 #![feature(stdsimd)]
@@ -35,3 +63,4 @@ pub unsafe extern "ptx-kernel" fn kernel(output: *mut i32, size: i32)
     //     i = i.wrapping_add(1);
     // }
 }
+"#;

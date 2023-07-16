@@ -9,6 +9,7 @@ use crate::error::{NaivelyTokenize, command_output_result};
 
 mod error;
 mod parse;
+mod range;
 
 #[proc_macro_attribute]
 pub fn basic_range(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -34,11 +35,11 @@ struct RangeAttributes;
 struct RangeFn(syn::ItemFn);
 
 static RANGE_FILES: &[(&str, &str, &str)] = &[
-    ("Cargo.toml", "", include_str!("range/Cargo.toml")),
-    ("rust-toolchain.toml", "", include_str!("range/rust-toolchain.toml")),
-    ("config.toml", ".cargo", include_str!("range/.cargo/config.toml")),
+    ("Cargo.toml", "", range::CARGO_TOML),
+    ("rust-toolchain.toml", "", range::RUST_TOOLCHAIN_TOML),
+    ("config.toml", ".cargo", range::CONFIG_TOML),
     ("device.rs", "src", ""),
-    ("lib.rs", "src", include_str!("range/src/lib.rs")),
+    ("lib.rs", "src", range::LIB_RS),
     ("kernel.rs", "target/nvptx64-nvidia-cuda/release", ""),
 ];
 
