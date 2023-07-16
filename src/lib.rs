@@ -11,7 +11,7 @@ mod error;
 mod parse;
 
 #[proc_macro_attribute]
-pub fn range_kernel(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn basic_range(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let attr = parse_macro_input!(attr as RangeAttributes);
     let item = parse_macro_input!(item as RangeFn);
     let result = emit_range_kernel(attr, item);
@@ -353,32 +353,63 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
     println!("{}", &int_impl.to_string());
 
     let launcher = quote::quote! {
-        unsafe fn #launch_name <const N: usize>() -> Box<[ #return_type ; N ]> {
+        unsafe fn #launch_name <const N: usize>() -> Result<Box<[ #return_type ; N ]>, spindle::range::Error> {
             use cudarc::{driver::{CudaDevice, DriverError, LaunchAsync, LaunchConfig}, nvrtc::Ptx};
-            let dev = CudaDevice::new(0).unwrap();
+            let dev = CudaDevice::new(0).unwrap(); //.map_err(Into::into)?;
             dev.load_ptx(
                 Ptx::from_file(#ptx_path),
                 "kernel",
                 &["kernel"]
-            ).unwrap();
-            let f = dev.get_func("kernel", "kernel").unwrap();
+            ).unwrap(); // .map_err(Into::into)?;
+            let f = dev.get_func("kernel", "kernel").unwrap(); // .map_err(Into::into)?;
+            
+            let layout = core::alloc::Layout::array::<#return_type>(N)
+                .unwrap(); //.map_err(Into::into)?
+            let mut out_host_ptr = std::alloc::alloc(layout.clone());
+            let out_host_vec = if out_host_ptr.is_null() {
+                std::alloc::dealloc(out_host_ptr, layout);
+                return Err(spindle::range::Error::AllocationFailed);
+            } else {
+                Vec::from_raw_parts(out_host_ptr as *mut #return_type, N, N)
+            };
+            // let out_host = unsafe { Box::from_raw(out_host as *mut [#return_type]) };
+            let mut out_dev = dev.htod_copy(out_host_vec).unwrap(); //.map_err(Into::into)?;
+
+            let config = LaunchConfig::for_num_elems(N as u32);
+            f.launch(config, (&mut out_dev, N as i32)).unwrap(); //.map_err(Into::into)?;
+            let out_host_2 = dev.sync_reclaim(out_dev).unwrap(); //.map_err(Into::into)?;
+            // Ok(out_host_2)
+            
+            
+            
+            
+            
+            
+            // dev.synchronize().unwrap();
+            // let host_output_2 = dev.sync_reclaim(dev_output).unwrap();
+            
+            
+            
+            
+            
+            
+            
+            
             
             // const LAYOUT: core::alloc::Layout = core::alloc::Layout::new::< [#return_type; N] >();
             // let host_output: [#return_type; N] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
             // dbg!(&host_output);
             // let mut dev_output = dev.htod_copy(host_output.into()).unwrap();
-            let config = LaunchConfig::for_num_elems(N as u32);
             
             
-            let mut dev_output: cudarc::driver::CudaSlice< #return_type > = 
-                unsafe { dev.alloc(N) }.unwrap();
-
-            unsafe { f.launch(config, (&mut dev_output, N as i32)) }.unwrap();
-            dev.synchronize().unwrap();
+            // let mut dev_output: cudarc::driver::CudaSlice< #return_type > = 
+            //     unsafe { dev.alloc(N) }.unwrap();
+            // unsafe { f.launch(config, (&mut dev_output, N as i32)) }.unwrap();
+            
             // dbg!(&dev_output);
-            let host_output = dev.sync_reclaim(dev_output).unwrap();
             // dbg!(&host_output);
-            host_output.try_into().unwrap()
+            Ok(out_host_2.try_into().unwrap())
+
             // todo!("clam chowder")
         }
     };
