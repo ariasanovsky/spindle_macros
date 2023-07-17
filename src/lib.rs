@@ -261,7 +261,6 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
     device.make_visible();
     device.rename("device");
     let mut spindle = RangeSpindle::generate(&name, &device)?;
-    // dbg!(&spindle);
     const WARNING: &'static str = "\
         #![no_std] \
         #![feature(abi_ptx)] \
@@ -303,20 +302,11 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
         }
     };
 
-    dbg!(&range_trait.to_string());
-
     let ptx_path = syn::LitStr::new(
         &format!("target/kernels/{}/target/nvptx64-nvidia-cuda/release/kernel.ptx", name),
         name.span()
     );
     
-    // let foo = quote::quote! {
-    //     #ptx_path
-    // };
-    // dbg!(foo.to_string());
-
-    println!("aadfhasdkj;fnsadklfns\n\n\n");
-
     let int_impl = quote::quote! {
         impl #trait_name for #input_type {
             type Returns = Vec<#return_type>;
@@ -350,8 +340,6 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
             }
         }
     };
-
-    println!("{}", &int_impl.to_string());
 
     let launcher = quote::quote! {
         unsafe fn #launch_name <const N: usize>() -> Result<Box<[ #return_type ; N ]>, spindle::range::Error> {
@@ -410,16 +398,8 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
             // dbg!(&dev_output);
             // dbg!(&host_output);
             Ok(out_host_2.try_into().unwrap())
-
-            // todo!("clam chowder")
         }
     };
-    // let out = quote::quote! {
-    //     #item
-    //     #launcher
-    // };
-    // println!("{}", out.to_string());
-
     Ok(quote::quote! {
         #item
         #range_trait
