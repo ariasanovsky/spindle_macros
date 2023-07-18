@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use serde::{Deserialize, Serialize};
-use syn::{parse_macro_input, /* token::Token */};
+use syn::parse_macro_input;
 
 use crate::error::{NaivelyTokenize, command_output_result};
 
@@ -309,7 +309,6 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
 
     let little_n = quote::quote! { n };
     let big_n = quote::quote! { N };
-
     let launch_kernel = |n: TokenStream| quote::quote! {
         let layout = core::alloc::Layout::array::<#return_type>(#n)?;
         use spindle::range::Error;
@@ -330,8 +329,9 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
         };
         let mut out_dev = dev.htod_copy(out_host_vec)?;
         let config = LaunchConfig::for_num_elems(#n as u32);
+        f.launch(config, (&mut out_dev, #n as i32))?;
+        let out_host_2 = dev.sync_reclaim(out_dev)?;
     };
-
     let launch_little_n = launch_kernel(little_n);
     let launch_big_n = launch_kernel(big_n);
     
@@ -341,34 +341,15 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
             unsafe fn #name (&self) -> Result<Self::Returns, spindle::range::Error> {
                 let n = *self as usize; //todo! does `as` branch?
                 #launch_little_n
-                f.launch(config, (&mut out_dev, *self as i32))?;
-                let out_host_2 = dev.sync_reclaim(out_dev)?;
                 Ok(out_host_2)
-                // let out_host = unsafe { Box::from_raw(out_host as *mut [#return_type]) };
             }
         }
     };
-
     let launcher = quote::quote! {
         unsafe fn #launch_name <const N: usize>() -> Result<Box<[ #return_type ; N ]>, spindle::range::Error> {
             #launch_big_n
-            f.launch(config, (&mut out_dev, N as i32))?;
-            let out_host_2 = dev.sync_reclaim(out_dev)?;
             out_host_2.try_into().map_err(|_| Error::LengthMismatch)
 
-            // let out_host = unsafe { Box::from_raw(out_host as *mut [#return_type]) };
-            // dev.synchronize().unwrap();
-            // let host_output_2 = dev.sync_reclaim(dev_output).unwrap();
-            // const LAYOUT: core::alloc::Layout = core::alloc::Layout::new::< [#return_type; N] >();
-            // let host_output: [#return_type; N] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-            // dbg!(&host_output);
-            // let mut dev_output = dev.htod_copy(host_output.into()).unwrap();
-            // let mut dev_output: cudarc::driver::CudaSlice< #return_type > = 
-            //     unsafe { dev.alloc(N) }.unwrap();
-            // unsafe { f.launch(config, (&mut dev_output, N as i32)) }.unwrap();
-            
-            // dbg!(&dev_output);
-            // dbg!(&host_output);
         }
     };
     Ok(quote::quote! {
@@ -378,3 +359,12 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
         #launcher
     })
 }
+
+// gone, but not forgotten
+// let out_host = unsafe { Box::from_raw(out_host as *mut [#return_type]) };
+// dev.synchronize().unwrap();
+// const LAYOUT: core::alloc::Layout = core::alloc::Layout::new::< [#return_type; N] >();
+// let host_output: [#return_type; N] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+// let mut dev_output = dev.htod_copy(host_output.into()).unwrap();
+// let mut dev_output: cudarc::driver::CudaSlice< #return_type > = 
+//     unsafe { dev.alloc(N) }.unwrap();
