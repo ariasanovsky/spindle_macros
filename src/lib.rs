@@ -40,7 +40,7 @@ static RANGE_FILES: &[(&str, &str, &str)] = &[
     ("config.toml", ".cargo", range::CONFIG_TOML),
     ("device.rs", "src", ""),
     ("lib.rs", "src", range::LIB_RS),
-    ("kernel.rs", "target/nvptx64-nvidia-cuda/release", ""),
+    ("kernel.ptx", "target/nvptx64-nvidia-cuda/release", ""),
 ];
 
 impl ToTokens for RangeFn {
@@ -306,98 +306,69 @@ fn emit_range_kernel(_attr: RangeAttributes, item: RangeFn) -> TokenResult {
         &format!("target/kernels/{}/target/nvptx64-nvidia-cuda/release/kernel.ptx", name),
         name.span()
     );
+
+    let little_n = quote::quote! { n };
+    let big_n = quote::quote! { N };
+
+    let launch_kernel = |n: TokenStream| quote::quote! {
+        let layout = core::alloc::Layout::array::<#return_type>(#n)?;
+        use spindle::range::Error;
+        use cudarc::{driver::{CudaDevice, DriverError, LaunchAsync, LaunchConfig}, nvrtc::Ptx};
+        let dev = CudaDevice::new(0)?;
+        dev.load_ptx(
+            Ptx::from_file(#ptx_path),
+            "kernel",
+            &["kernel"]
+        )?;
+        let f = dev.get_func("kernel", "kernel").ok_or(Error::KernelNotFound)?;
+        let mut out_host_ptr = std::alloc::alloc(layout.clone());
+        let out_host_vec = if out_host_ptr.is_null() {
+            std::alloc::dealloc(out_host_ptr, layout);
+            return Err(Error::AllocationFailed);
+        } else {
+            Vec::from_raw_parts(out_host_ptr as *mut #return_type, #n, #n)
+        };
+        let mut out_dev = dev.htod_copy(out_host_vec)?;
+        let config = LaunchConfig::for_num_elems(#n as u32);
+    };
+
+    let launch_little_n = launch_kernel(little_n);
+    let launch_big_n = launch_kernel(big_n);
     
     let int_impl = quote::quote! {
         impl #trait_name for #input_type {
             type Returns = Vec<#return_type>;
             unsafe fn #name (&self) -> Result<Self::Returns, spindle::range::Error> {
-                use cudarc::{driver::{CudaDevice, DriverError, LaunchAsync, LaunchConfig}, nvrtc::Ptx};
-                let dev = CudaDevice::new(0).unwrap(); //.map_err(Into::into)?;
-                dev.load_ptx(
-                    Ptx::from_file(#ptx_path),
-                    "kernel",
-                    &["kernel"]
-                ).unwrap(); // .map_err(Into::into)?;
-                let f = dev.get_func("kernel", "kernel").unwrap(); // .map_err(Into::into)?;
-                
-                let n = *self as usize; //.map_err(Into::into)?;
-                let layout = core::alloc::Layout::array::<#return_type>(n)
-                    .unwrap(); //.map_err(Into::into)?
-                let mut out_host_ptr = std::alloc::alloc(layout.clone());
-                let out_host_vec = if out_host_ptr.is_null() {
-                    std::alloc::dealloc(out_host_ptr, layout);
-                    return Err(spindle::range::Error::AllocationFailed);
-                } else {
-                    Vec::from_raw_parts(out_host_ptr as *mut #return_type, n, n)
-                };
-                // let out_host = unsafe { Box::from_raw(out_host as *mut [#return_type]) };
-                let mut out_dev = dev.htod_copy(out_host_vec).unwrap(); //.map_err(Into::into)?;
-
-                let config = LaunchConfig::for_num_elems(*self as u32);
-                f.launch(config, (&mut out_dev, *self as i32)).unwrap(); //.map_err(Into::into)?;
-                let out_host_2 = dev.sync_reclaim(out_dev).unwrap(); //.map_err(Into::into)?;
+                let n = *self as usize; //todo! does `as` branch?
+                #launch_little_n
+                f.launch(config, (&mut out_dev, *self as i32))?;
+                let out_host_2 = dev.sync_reclaim(out_dev)?;
                 Ok(out_host_2)
+                // let out_host = unsafe { Box::from_raw(out_host as *mut [#return_type]) };
             }
         }
     };
 
     let launcher = quote::quote! {
         unsafe fn #launch_name <const N: usize>() -> Result<Box<[ #return_type ; N ]>, spindle::range::Error> {
-            use cudarc::{driver::{CudaDevice, DriverError, LaunchAsync, LaunchConfig}, nvrtc::Ptx};
-            let dev = CudaDevice::new(0).unwrap(); //.map_err(Into::into)?;
-            dev.load_ptx(
-                Ptx::from_file(#ptx_path),
-                "kernel",
-                &["kernel"]
-            ).unwrap(); // .map_err(Into::into)?;
-            let f = dev.get_func("kernel", "kernel").unwrap(); // .map_err(Into::into)?;
-            
-            let layout = core::alloc::Layout::array::<#return_type>(N)
-                .unwrap(); //.map_err(Into::into)?
-            let mut out_host_ptr = std::alloc::alloc(layout.clone());
-            let out_host_vec = if out_host_ptr.is_null() {
-                std::alloc::dealloc(out_host_ptr, layout);
-                return Err(spindle::range::Error::AllocationFailed);
-            } else {
-                Vec::from_raw_parts(out_host_ptr as *mut #return_type, N, N)
-            };
-            // let out_host = unsafe { Box::from_raw(out_host as *mut [#return_type]) };
-            let mut out_dev = dev.htod_copy(out_host_vec).unwrap(); //.map_err(Into::into)?;
+            #launch_big_n
+            f.launch(config, (&mut out_dev, N as i32))?;
+            let out_host_2 = dev.sync_reclaim(out_dev)?;
+            out_host_2.try_into().map_err(|_| Error::LengthMismatch)
 
-            let config = LaunchConfig::for_num_elems(N as u32);
-            f.launch(config, (&mut out_dev, N as i32)).unwrap(); //.map_err(Into::into)?;
-            let out_host_2 = dev.sync_reclaim(out_dev).unwrap(); //.map_err(Into::into)?;
-            // Ok(out_host_2)
-            
-            
-            
-            
-            
-            
+            // let out_host = unsafe { Box::from_raw(out_host as *mut [#return_type]) };
             // dev.synchronize().unwrap();
             // let host_output_2 = dev.sync_reclaim(dev_output).unwrap();
-            
-            
-            
-            
-            
-            
-            
-            
-            
             // const LAYOUT: core::alloc::Layout = core::alloc::Layout::new::< [#return_type; N] >();
             // let host_output: [#return_type; N] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
             // dbg!(&host_output);
             // let mut dev_output = dev.htod_copy(host_output.into()).unwrap();
-            
-            
             // let mut dev_output: cudarc::driver::CudaSlice< #return_type > = 
             //     unsafe { dev.alloc(N) }.unwrap();
             // unsafe { f.launch(config, (&mut dev_output, N as i32)) }.unwrap();
             
             // dbg!(&dev_output);
             // dbg!(&host_output);
-            Ok(out_host_2.try_into().unwrap())
         }
     };
     Ok(quote::quote! {
